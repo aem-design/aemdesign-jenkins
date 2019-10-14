@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspaceFilter version="1.0">
+	<filter root="/content/forms/af/campaign-forms" mode="update"/>
+	<filter root="/content/experience-fragments/swinburne-microsites" mode="update"/>
+	<filter root="/content/experience-fragments/swinburne-site" mode="update"/>
+	<filter root="/content/swinburne-microsites" mode="merge"/>
+	<filter root="/content/swinburne-site" mode="merge"/>
+	<filter root="/content/cq:tags/swinburne-microsites/component-analytics/linklocation" mode="update"/>
+	<filter root="/content/cq:tags/swinburne-microsites/component-analytics/linktype" mode="update"/>
+	<filter root="/content/dam/formsanddocuments/campaign-forms" mode="update"/>
+</workspaceFilter>

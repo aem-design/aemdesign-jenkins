@@ -1,0 +1,51 @@
+pipeline {
+  agent any
+  parameters {
+          choice(name: 'RUN_ONCE_INIT', choices: params.RUN_ONCE_INIT ? ['false','true'] : ['true','false'], description: 'Initialise the parameters only during first run')
+          choice(name: 'SOURCE_SCHEMA', choices: ['http', 'https'], description: 'http or https')
+          string(name: 'SOURCE_HOST', defaultValue: params.SOURCE_HOST ?: 'localhost', description: 'Which host should content be exported from')
+          string(name: 'SOURCE_PORT', defaultValue: params.SOURCE_PORT ?: '4502', description: 'Port address of host server')
+          string(name: 'SOURCE_AEM_USER', defaultValue: params.SOURCE_AEM_USER ?: 'admin', description: 'AEM user name')
+          password(name: 'SOURCE_AEM_PASSWORD', defaultValue: '', description: 'AEM user password')
+          string(name: 'ROOT_CONTENT_FOLDER', defaultValue: params.ROOT_CONTENT_FOLDER ?: 'localhost_default_vlt_export', description: 'Root folder for content export')
+          string(name: 'VLT_FLAGS', defaultValue: params.VLT_FLAGS ?: '', description: 'Optional vlt flags (e.g. --insecure)')
+          string(name: 'VLT_CMD', defaultValue: params.VLT_CMD ?: './bin/vault-cli-3.2.9-SNAPSHOT/bin/vlt', description: 'Option command string to execute vlt')
+  }
+  stages {
+    stage("Initialise") {
+        steps {
+          script {
+              if (params.RUN_ONCE_INIT == 'true') {
+                  echo "Aborting run as this is for init only"
+                  currentBuild.result = 'ABORTED'
+                  error('INITIALISE RUN COMPLETED. JOB PARAMETERIZED.')
+              } else {
+                  echo "We are not initialising here, continue run"
+              }
+          }
+        }
+    }
+    stage('Extract vlt tool') {
+       steps {
+         sh "cd vlt/bin && ls -la && tar -xzf vault-cli-3.2.9-SNAPSHOT.tar.gz"
+        }
+    }
+    stage('Run vlt import') {
+       steps {
+         sh '''#!/bin/bash +x
+                cd vlt ;
+                vltcmd="./vlt-import-to-aem-test.sh" ;
+                vltcmd="$vltcmd -s ${SOURCE_SCHEMA}" ;
+                vltcmd="$vltcmd -h ${SOURCE_HOST}" ;
+                vltcmd="$vltcmd -o ${SOURCE_PORT}" ;
+                vltcmd="$vltcmd -u ${SOURCE_AEM_USER}" ;
+                vltcmd="$vltcmd -p ${SOURCE_AEM_PASSWORD}" ;
+                vltcmd="$vltcmd -r ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated" ;
+                [ ! -z "${VLT_FLAGS}" ] && vltcmd="$vltcmd -f ${VLT_FLAGS}" ;
+                vltcmd="$vltcmd -c ${VLT_CMD}" ;
+                eval "$vltcmd"
+                '''
+        }
+    }
+  }
+}

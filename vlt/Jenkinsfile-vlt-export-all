@@ -1,0 +1,113 @@
+pipeline {
+  agent any
+  parameters {
+          choice(name: 'RUN_ONCE_INIT', choices: params.RUN_ONCE_INIT ? ['false','true'] : ['true','false'], description: 'Initialise the parameters only during first run')
+          choice(name: 'DO_MIGRATION', choices: ['false','true'], description: 'Run the content migration job after vlt export')
+          choice(name: 'IGNORE_DAM', choices: ['false','true'], description: 'Ignore export of DAM assets')
+          choice(name: 'SOURCE_SCHEMA', choices: ['http', 'https'], description: 'http or https')
+          string(name: 'SOURCE_HOST', defaultValue: params.SOURCE_HOST ?: 'localhost', description: 'Which host should content be exported from')
+          string(name: 'SOURCE_PORT', defaultValue: params.SOURCE_PORT ?: '4502', description: 'Port address of host server')
+          string(name: 'SOURCE_AEM_USER', defaultValue: params.SOURCE_AEM_USER ?: 'admin', description: 'AEM user name')
+          password(name: 'SOURCE_AEM_PASSWORD', defaultValue: '', description: 'AEM user password')
+          string(name: 'ROOT_CONTENT_FOLDER', defaultValue: params.ROOT_CONTENT_FOLDER ?: 'localhost_default_vlt_export', description: 'Root folder for content export')
+          string(name: 'VLT_FLAGS', defaultValue: params.VLT_FLAGS ?: '', description: 'Optional vlt flags (e.g. --insecure)')
+          string(name: 'VLT_CMD', defaultValue: params.VLT_CMD ?: './bin/vault-cli-3.2.9-SNAPSHOT/bin/vlt', description: 'Option command string to execute vlt')
+  }
+  stages {
+    stage("Initialise") {
+      steps {
+        script {
+          if (params.RUN_ONCE_INIT == 'true') {
+              echo "Aborting run as this is for init only"
+              currentBuild.result = 'ABORTED'
+              error('INITIALISE RUN COMPLETED. JOB PARAMETERIZED.')
+          } else {
+              echo "We are not initialising here, continue run"
+          }
+        }
+      }
+    }
+    stage('Delete existing content') {
+       steps {
+          sh "rm -rf ${ROOT_CONTENT_FOLDER}"
+          sh "mkdir -p ${ROOT_CONTENT_FOLDER} && cp -a vlt/META-INF ${ROOT_CONTENT_FOLDER}"
+        }
+    }
+    stage('Extract vlt tool') {
+       steps {
+         sh "cd vlt/bin && ls -la && tar -xzf vault-cli-3.2.9-SNAPSHOT.tar.gz"
+        }
+    }
+    stage('Run vlt export') {
+       steps {
+         sh '''#!/bin/bash +x
+                cd vlt ;
+                vltcmd="./vlt-export-to-disk.sh" ;
+                vltcmd="$vltcmd -s ${SOURCE_SCHEMA}" ;
+                vltcmd="$vltcmd -h ${SOURCE_HOST}" ;
+                vltcmd="$vltcmd -o ${SOURCE_PORT}" ;
+                vltcmd="$vltcmd -u ${SOURCE_AEM_USER}" ;
+                vltcmd="$vltcmd -p ${SOURCE_AEM_PASSWORD}" ;
+                vltcmd="$vltcmd -r ${WORKSPACE}/${ROOT_CONTENT_FOLDER}" ;
+                [ ! -z "${VLT_FLAGS}" ] && vltcmd="$vltcmd -f ${VLT_FLAGS}" ;
+                vltcmd="$vltcmd -c ${VLT_CMD}" ;
+                eval "$vltcmd"
+                '''
+        }
+    }
+    stage('Export unique DAM assets and re-run vlt to fetch') {
+      when {
+         expression { IGNORE_DAM == 'false' }
+      }
+      steps {
+        sh '''grep -r -o -h 'fileReference=.*"' ${ROOT_CONTENT_FOLDER}/jcr_root/content/swinburne-microsites | sed -e 's/fileReference=//g' | uniq | sed -i '/<workspaceFilter version="1.0">/r /dev/stdin' ${ROOT_CONTENT_FOLDER}/META-INF/vault/filter.xml'''
+        sh '''sed -i 's/^"\\/content.*/\\t<filter root=& mode="update"\\/>/' ${ROOT_CONTENT_FOLDER}/META-INF/vault/filter.xml'''
+        sh "cat ${ROOT_CONTENT_FOLDER}/META-INF/vault/filter.xml"
+        sh '''#!/bin/bash +x
+                cd vlt ;
+                vltcmd="./vlt-export-to-disk.sh" ;
+                vltcmd="$vltcmd -s ${SOURCE_SCHEMA}" ;
+                vltcmd="$vltcmd -h ${SOURCE_HOST}" ;
+                vltcmd="$vltcmd -o ${SOURCE_PORT}" ;
+                vltcmd="$vltcmd -u ${SOURCE_AEM_USER}" ;
+                vltcmd="$vltcmd -p ${SOURCE_AEM_PASSWORD}" ;
+                vltcmd="$vltcmd -r ${WORKSPACE}/${ROOT_CONTENT_FOLDER}" ;
+                [ ! -z "${VLT_FLAGS}" ] && vltcmd="$vltcmd -f ${VLT_FLAGS}" ;
+                vltcmd="$vltcmd -c ${VLT_CMD}" ;
+                eval "$vltcmd"
+                '''
+      }
+    }
+    stage('Migrate exported content') {
+      when {
+         expression { DO_MIGRATION == 'true' }
+      }
+      steps {
+         sh "mkdir -p ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated/ && cp -a ${ROOT_CONTENT_FOLDER}/. ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated/"
+         sh "echo Migrating the following files: ; find  ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated -type f"
+         sh '''#!/bin/bash +x
+                cd vlt ;
+                migratecmd="./content-migrate.sh" ;
+                migratecmd="$migratecmd -r ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated" ;
+                echo "$migratecmd" &&
+                eval "$migratecmd"
+            '''
+      }
+    }
+    stage('Copy exported content without migration') {
+      when {
+         expression { DO_MIGRATION == 'false' }
+      }
+      steps {
+         sh "mkdir -p ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated/ && cp -a ${ROOT_CONTENT_FOLDER}/. ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated/"
+      }
+    }
+    stage('Archive content to AEM package') {
+      steps {
+        sh "rm -f ${ROOT_CONTENT_FOLDER}-package.zip"
+        zip zipFile: "${ROOT_CONTENT_FOLDER}-package.zip", dir:"${ROOT_CONTENT_FOLDER}"
+        archiveArtifacts artifacts: "${ROOT_CONTENT_FOLDER}-package.zip", fingerprint: false
+      }
+    }
+  }
+}

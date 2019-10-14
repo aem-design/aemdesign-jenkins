@@ -1,0 +1,92 @@
+pipeline {
+  agent any
+  parameters {
+          choice(name: 'RUN_ONCE_INIT', choices: params.RUN_ONCE_INIT ? ['false','true'] : ['true','false'], description: 'Initialise the parameters only during first run')
+          choice(name: 'DO_MIGRATION', choices: ['false','true'], description: 'Run the content migration job after vlt export')
+          choice(name: 'IGNORE_DAM', choices: ['false','true'], description: 'Ignore export of DAM assets')
+          choice(name: 'SOURCE_SCHEMA', choices: ['http', 'https'], description: 'http or https')
+          string(name: 'SOURCE_HOST', defaultValue: params.SOURCE_HOST ?: 'localhost', description: 'Which host should content be exported from')
+          string(name: 'SOURCE_PORT', defaultValue: params.SOURCE_PORT ?: '4502', description: 'Port address of host server')
+          string(name: 'SOURCE_AEM_USER', defaultValue: params.SOURCE_AEM_USER ?: 'admin', description: 'AEM user name')
+          password(name: 'SOURCE_AEM_PASSWORD', defaultValue: '', description: 'AEM user password')
+          string(name: 'ROOT_CONTENT_FOLDER', defaultValue: params.ROOT_CONTENT_FOLDER ?: 'localhost_default_vlt_export', description: 'Root folder for content export')
+          string(name: 'VLT_FLAGS', defaultValue: params.VLT_FLAGS ?: '', description: 'Optional vlt flags (e.g. --insecure)')
+          string(name: 'VLT_CMD', defaultValue: params.VLT_CMD ?: './bin/vault-cli-3.2.9-SNAPSHOT/bin/vlt', description: 'Option command string to execute vlt')
+  }
+  stages {
+    stage("Initialise") {
+      steps {
+        script {
+          if (params.RUN_ONCE_INIT == 'true') {
+              echo "Aborting run as this is for init only"
+              currentBuild.result = 'ABORTED'
+              error('INITIALISE RUN COMPLETED. JOB PARAMETERIZED.')
+          } else {
+              echo "We are not initialising here, continue run"
+          }
+        }
+      }
+    }
+    stage('Setup vlt filter paths and delete existing content') {
+       steps {
+          sh "rm -rf ${ROOT_CONTENT_FOLDER}"
+          script {
+            if (params.IGNORE_DAM == 'true') {
+                echo "Updating filter.xml to remove DAM paths"
+                sh "mv -f vlt/META-INF/vault/filter-no-dam.xml vlt/META-INF/vault/filter.xml"
+                sh "mkdir -p ${ROOT_CONTENT_FOLDER} && cp -a vlt/META-INF ${ROOT_CONTENT_FOLDER}"
+            } else {
+                echo "Using default filter.xml which includes DAM paths"
+                sh "rm -f vlt/META-INF/vault/filter-no-dam.xml"
+                sh "mkdir -p ${ROOT_CONTENT_FOLDER} && cp -a vlt/META-INF ${ROOT_CONTENT_FOLDER}"
+            }
+          }
+        }
+    }
+    stage('Extract vlt tool') {
+       steps {
+         sh "cd vlt/bin && ls -la && tar -xzf vault-cli-3.2.9-SNAPSHOT.tar.gz"
+        }
+    }
+    stage('Run vlt export') {
+       steps {
+         sh '''#!/bin/bash +x
+                cd vlt ;
+                vltcmd="./vlt-export-to-disk-test.sh" ;
+                vltcmd="$vltcmd -s ${SOURCE_SCHEMA}" ;
+                vltcmd="$vltcmd -h ${SOURCE_HOST}" ;
+                vltcmd="$vltcmd -o ${SOURCE_PORT}" ;
+                vltcmd="$vltcmd -u ${SOURCE_AEM_USER}" ;
+                vltcmd="$vltcmd -p ${SOURCE_AEM_PASSWORD}" ;
+                vltcmd="$vltcmd -r ${WORKSPACE}/${ROOT_CONTENT_FOLDER}" ;
+                [ ! -z "${VLT_FLAGS}" ] && vltcmd="$vltcmd -f ${VLT_FLAGS}" ;
+                vltcmd="$vltcmd -c ${VLT_CMD}" ;
+                eval "$vltcmd"
+             '''
+        }
+    }
+    stage('Migrate exported content') {
+      when {
+         expression { DO_MIGRATION == 'true' }
+      }
+      steps {
+         sh "mkdir -p ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated/ && cp -a ${ROOT_CONTENT_FOLDER}/. ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated/"
+         sh '''#!/bin/bash +x
+                cd vlt ;
+                migratecmd="./content-migrate-test.sh" ;
+                migratecmd="$migratecmd -r ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated" ;
+                echo "$migratecmd" &&
+                eval "$migratecmd"
+            '''
+      }
+    }
+    stage('Copy exported content without migration') {
+      when {
+         expression { DO_MIGRATION == 'false' }
+      }
+      steps {
+         sh "mkdir -p ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated/ && cp -a ${ROOT_CONTENT_FOLDER}/. ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_FOLDER}-migrated/"
+      }
+    }
+  }
+}

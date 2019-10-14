@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Content-Package-Roots: /content/swinburne-showcase,/content/dam/swinbu
+ rne-showcase
+Content-Package-Type: content
+Content-Package-Id: :
+

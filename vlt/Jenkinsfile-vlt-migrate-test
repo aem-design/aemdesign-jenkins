@@ -1,0 +1,37 @@
+pipeline {
+  agent any
+  parameters {
+          choice(name: 'RUN_ONCE_INIT', choices: params.RUN_ONCE_INIT ? ['false','true'] : ['true','false'], description: 'Initialise the parameters only during first run')
+          string(name: 'ROOT_CONTENT_SOURCE_FOLDER', defaultValue: params.ROOT_CONTENT_SOURCE_FOLDER ?: 'localhost_default_vlt_export', description: 'Source folder name for content migration')
+          string(name: 'ROOT_CONTENT_TARGET_FOLDER', defaultValue: params.ROOT_CONTENT_TARGET_FOLDER ?: 'localhost_default_vlt_export-migrated', description: 'Destination folder name for content migration')
+          string(name: 'VLT_FLAGS', defaultValue: params.VLT_FLAGS ?: '', description: 'Optional vlt flags (e.g. --insecure)')
+          string(name: 'VLT_CMD', defaultValue: params.VLT_CMD ?: './bin/vault-cli-3.2.9-SNAPSHOT/bin/vlt', description: 'Option command string to execute vlt')
+  }
+  stages {
+    stage("Initialise") {
+        steps {
+          script {
+              if (params.RUN_ONCE_INIT == 'true') {
+                  echo "Aborting run as this is for init only"
+                  currentBuild.result = 'ABORTED'
+                  error('INITIALISE RUN COMPLETED. JOB PARAMETERIZED.')
+              } else {
+                  echo "We are not initialising here, continue run"
+              }
+          }
+        }
+    }
+    stage('Migrate exported content') {
+      steps {
+         sh "mkdir -p ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_TARGET_FOLDER}/ && cp -a /var/jenkins_home/workspace/pipeline-content-export/${ROOT_CONTENT_SOURCE_FOLDER}/. ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_TARGET_FOLDER}/"
+         sh '''#!/bin/bash +x
+                cd vlt ;
+                migratecmd="./content-migrate-test.sh" ;
+                migratecmd="$migratecmd -r ${CONTENT_SYNC_HOME}/${ROOT_CONTENT_TARGET_FOLDER}" ;
+                echo "$migratecmd" &&
+                eval "$migratecmd"
+            '''
+      }
+    }
+  }
+}

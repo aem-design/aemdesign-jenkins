@@ -1,0 +1,86 @@
+jobs:
+  - script: >
+      pipelineJob('pipeline-1') {
+          definition {
+              cpsScm {
+                  scriptPath 'Jenkinsfile'
+                  scm {
+                    git {
+                        remote { 
+                          url 'https://gitlab.com/swinburne-dxp/swinburne-core.git' 
+                        }
+                        branch '*/task/jenkins-develop'
+                        extensions {}
+                    }
+                  }
+              }
+          }
+      }
+  - script: >
+        pipelineJob('pipeline-content-export') {
+            definition {
+                cpsScm {
+                    scriptPath 'vlt/Jenkinsfile-vlt-export-test'
+                    scm {
+                      git {
+                          remote {
+                            url 'https://github.com/aem-design/aemdesign-jenkins.git'
+                          }
+                          branch '*/master'
+                          extensions {}
+                      }
+                    }
+                }
+            }
+        }
+  - script: >
+      pipelineJob('pipeline-content-import') {
+          definition {
+              cpsScm {
+                  scriptPath 'vlt/Jenkinsfile-vlt-import-test'
+                  scm {
+                    git {
+                        remote {
+                          url 'https://github.com/aem-design/aemdesign-jenkins.git'
+                        }
+                        branch '*/master'
+                        extensions {}
+                    }
+                  }
+              }
+          }
+      }
+  - script: >
+      pipelineJob('pipeline-content-migrate') {
+          definition {
+              cpsScm {
+                  scriptPath 'vlt/Jenkinsfile-vlt-migrate-test'
+                  scm {
+                    git {
+                        remote {
+                          url 'https://github.com/aem-design/aemdesign-jenkins.git'
+                        }
+                        branch '*/master'
+                        extensions {}
+                    }
+                  }
+              }
+          }
+      }
+  - script: >
+      pipelineJob('pipeline-release') {
+          definition {
+              cpsScm {
+                  scriptPath 'release/Jenkinsfile-release-test'
+                  scm {
+                    git {
+                        remote {
+                          url 'https://github.com/aem-design/aemdesign-jenkins.git'
+                        }
+                        branch '*/master'
+                        extensions {}
+                    }
+                  }
+              }
+          }
+      }
