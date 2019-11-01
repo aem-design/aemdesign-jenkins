@@ -7,9 +7,9 @@ jobs:
                   scm {
                     git {
                         remote { 
-                          url 'https://gitlab.com/swinburne-dxp/swinburne-core.git' 
+                          url 'https://github.com/aem-design/aemdesign-aem-core.git'
                         }
-                        branch '*/task/jenkins-develop'
+                        branch 'master'
                         extensions {}
                     }
                   }

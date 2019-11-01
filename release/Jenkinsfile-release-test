@@ -1,0 +1,87 @@
+pipeline {
+  agent any
+  parameters {
+    choice(name: 'RUN_ONCE_INIT', choices: params.RUN_ONCE_INIT ? ['false','true'] : ['true','false'], description: 'Initialise the parameters only during first run')
+    string(name: 'CORE_RELEASE_NUMBER', defaultValue: params.CORE_RELEASE_NUMBER ?: '', description: 'Set the release number for swinburne-core repo following semver pattern (e.g. 1.0.0)')
+    booleanParam(name: 'DO_SNAPSHOT_RELEASE', defaultValue: true, description: 'Build as a SNAPSHOT release for development')
+  }
+  stages {
+    stage("Initialise") {
+      steps {
+        script {
+          if (params.RUN_ONCE_INIT == 'true') {
+              echo "Aborting run as this is for init only"
+              currentBuild.result = 'ABORTED'
+              error('INITIALISE RUN COMPLETED. JOB PARAMETERIZED.')
+          } else {
+              echo "We are not initialising here, continue run"
+          }
+        }
+      }
+    }
+    stage('Checkout core repo') {
+      steps {
+        git credentialsId: 'jenkins-release-key', url: 'git@gitlab.com:swinburne-dxp/swinburne-core.git'
+      }
+    }
+    stage('Create new git release branch') {
+        steps {
+            sh 'git checkout master && git checkout -b release/${CORE_RELEASE_NUMBER}'
+        }
+    }
+    stage('Update SNAPSHOT version numbers') {
+      when {
+         expression { DO_SNAPSHOT_RELEASE == 'true' }
+      }
+      steps {
+        withMaven(maven: 'Maven 3') {
+            sh '''
+                mvn versions:set -DnewVersion=${CORE_RELEASE_NUMBER}-SNAPSHOT -DgenerateBackupPoms=false &&
+                mvn versions:update-parent -DallowSnapshots=true
+            '''
+        }
+      }
+    }
+    stage('Update RELEASE version numbers') {
+      when {
+         expression { DO_SNAPSHOT_RELEASE == 'false' }
+      }
+      steps {
+        withMaven(maven: 'Maven 3') {
+            sh '''
+                mvn versions:set -DnewVersion=${CORE_RELEASE_NUMBER} -DgenerateBackupPoms=false &&
+                mvn versions:update-parent -DallowSnapshots=true
+            '''
+        }
+      }
+    }
+    stage('Commit and push updates to release branch') {
+      steps {
+        sshagent(['jenkins-release-key']) {
+            sh'''
+                git config --global user.email "jenkins@pipeline.com" ;
+                git config --global user.name "Jenkins Release Pipeline" ;
+                git commit -am "Release pipeline updating version numbers" ;
+                git push origin release/${CORE_RELEASE_NUMBER}:release/${CORE_RELEASE_NUMBER}
+            '''
+        }
+      }
+    }
+    stage('Maven deploy to artifactory') {
+      steps {
+        withMaven(maven: 'Maven 3') {
+          sh 'mvn clean deploy -DskipTests=true'
+        }
+      }
+    }
+    stage('Cleanup jenkins git release branch') {
+      steps {
+        sh'''
+            git checkout master ;
+            git branch -d release/${CORE_RELEASE_NUMBER}
+        '''
+      }
+    }
+  }
+
+}

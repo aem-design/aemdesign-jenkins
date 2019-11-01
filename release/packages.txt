@@ -1,0 +1,3 @@
+swinburne-core-deploy-1.0.0-SNAPSHOT.zip
+swinburne-microsites-deploy-1.0.0-SNAPSHOT.zip
+swinburne-site-deploy-1.0.0-SNAPSHOT.zip
